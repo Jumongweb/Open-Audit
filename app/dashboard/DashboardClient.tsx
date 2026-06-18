@@ -1,21 +1,11 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
-import {
-  AlertCircle,
-  BookOpen,
-  ArrowRight,
-  Radio,
-  PauseCircle,
-  PlayCircle,
-  Upload,
-  FileJson,
-  Trash2,
-} from "lucide-react";
 import { SearchBar } from "@/components/dashboard/SearchBar";
 import { EventFeedTable } from "@/components/dashboard/EventFeedTable";
 import { StatsBar } from "@/components/dashboard/StatsBar";
 import { UploadAbiDialog } from "@/components/dashboard/UploadAbiDialog";
+import { ExportDataDialog } from "@/components/dashboard/ExportDataDialog";
 import { Button } from "@/components/ui/button";
 import {
   buildCustomBlueprints,
@@ -42,7 +32,6 @@ export function DashboardClient(): React.JSX.Element {
   const [searchedContract, setSearchedContract] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [events, setEvents] = useState<TranslatedEvent[]>([]);
 
   // Load previously uploaded ABIs from localStorage after mount. Doing this in
   // an effect (rather than during render) keeps the server and client output
@@ -59,24 +48,15 @@ export function DashboardClient(): React.JSX.Element {
     [customAbis],
   );
 
-  /**
-   * Offload XDR decoding + translation-registry lookups to a Web Worker for
-   * batches > 500 events.  Falls back to synchronous translation for smaller
-   * batches or in SSR/test environments.  Results are loaded into state via
-   * requestAnimationFrame batches (via loadInChunks) to avoid a single large
-   * synchronous state update freezing the rendering thread.
-   */
-  const { events: translatedEvents, isTranslating } = useEventTranslator({
-    rawEvents,
-    customBlueprints,
-  });
-
-  // Live-feed events are prepended directly — they arrive one at a time so
-  // there is no risk of freezing the thread.
-  const [liveEvents, setLiveEvents] = useState<TranslatedEvent[]>([]);
+    function () {
+      const translated = translateEvents(rawEvents, customBlueprints);
+      return [...liveEvents, ...translated];
+    },
+    [rawEvents, customBlueprints, liveEvents]
+  );
 
   const handleNewEvent = useCallback((event: TranslatedEvent) => {
-    setLiveEvents((prev) => [event, ...prev]);
+
   }, []);
 
   const { isLive, isPaused, newEventIds, toggleLive, togglePause } =
@@ -220,6 +200,21 @@ export function DashboardClient(): React.JSX.Element {
             Event Feed
           </h2>
           <div className="flex items-center gap-2">
+            {/* Export Data button — placed at the header boundary of the event stream */}
+            <Button
+              id="export-data-button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-3 text-xs border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950"
+              onClick={function () {
+                setIsExportOpen(true);
+              }}
+              disabled={isLoading || events.length === 0}
+              aria-label="Export filtered event data"
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+              Export Data
+            </Button>
             {isLive && (
               <Button
                 variant="ghost"
@@ -301,6 +296,13 @@ export function DashboardClient(): React.JSX.Element {
         open={isUploadOpen}
         onOpenChange={setIsUploadOpen}
         onUpload={handleAbiUpload}
+      />
+
+      {/* Export Data dialog */}
+      <ExportDataDialog
+        open={isExportOpen}
+        onOpenChange={setIsExportOpen}
+        events={events}
       />
     </div>
   );
